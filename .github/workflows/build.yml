@@ -1,0 +1,122 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  DOCKER_BUILD_RECORD_UPLOAD: false  # one build-record artifact per build otherwise
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # The CUDA devel image is ~7 GB unpacked; hosted runners start with ~14 GB free.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and export the binary
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: export
+          outputs: type=local,dest=out
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      # Release tarballs only; every other build passes images through GHCR, not artifacts.
+      - name: Package the binary
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tar -C out -czf brrr-linux-${{ matrix.arch }}.tar.gz brrr LICENSE NOTICE LICENSE.cudnn-frontend
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: brrr-linux-${{ matrix.arch }}
+          path: brrr-linux-${{ matrix.arch }}.tar.gz
+          retention-days: 1
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the runtime image for this arch
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: linux/${{ matrix.arch }}
+          provenance: false  # the default attestation embeds the push event (commit messages, emails)
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          tags: ${{ env.IMAGE }}:${{ github.sha }}-${{ matrix.arch }}
+          push: true
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag the amd64 + arm64 index
+        run: |
+          tags=(-t "$IMAGE:${GITHUB_SHA::7}")
+          if [[ "$GITHUB_REF" == refs/heads/main ]]; then tags+=(-t "$IMAGE:main"); fi
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then tags+=(-t "$IMAGE:$GITHUB_REF_NAME" -t "$IMAGE:latest"); fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE:$GITHUB_SHA-amd64" "$IMAGE:$GITHUB_SHA-arm64"
+          docker buildx imagetools inspect "$IMAGE:${GITHUB_SHA::7}"
+
+      - uses: actions/download-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          pattern: brrr-linux-*
+          merge-multiple: true
+
+      - name: Attach binaries to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" brrr-linux-amd64.tar.gz brrr-linux-arm64.tar.gz \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,0 +1,4 @@
+build/
+.git/
+out/
+*.tar.gz

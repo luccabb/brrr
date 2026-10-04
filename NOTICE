@@ -1,0 +1,26 @@
+brrr
+Copyright (c) 2026, Lucca Bertoncini
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+brrr's design is inspired by gpu-burn (https://github.com/wilicc/gpu-burn,
+BSD-2-Clause, Copyright (c) 2020 Ville Timonen). brrr contains no gpu-burn code.
+
+Third-party components:
+
+- cudnn-frontend (https://github.com/NVIDIA/cudnn-frontend), Apache License 2.0,
+  Copyright (c) NVIDIA CORPORATION & AFFILIATES. Header-only; v1.30.0 is downloaded at
+  build time and compiled into the brrr binary. Its license ships as
+  LICENSE.cudnn-frontend with the image and release tarballs.
+
+- NVIDIA CUDA Toolkit components, under the NVIDIA CUDA Toolkit End User License
+  Agreement (https://docs.nvidia.com/cuda/eula/): the CUDA runtime and culibos are
+  statically linked into the brrr binary, and the brrr image includes cuBLASLt
+  (libcublasLt.so.13), NVRTC (libnvrtc.so.13) and the CUDA runtime (libcudart.so.13).
+  NVML is loaded from the host driver at runtime.
+
+- NVIDIA cuDNN, under the NVIDIA cuDNN Software License Agreement
+  (https://docs.nvidia.com/deeplearning/cudnn/latest/reference/eula.html): the brrr
+  image includes the cuDNN libraries (libcudnn*.so.9), which brrr opens at runtime.
+
+The NVIDIA components are not covered by the Apache License.
