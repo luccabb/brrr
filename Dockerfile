@@ -8,7 +8,7 @@
 ARG CUDA_VERSION=13.4.2
 
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu24.04 AS build
-ARG ARCHS=103
+ARG ARCHS="100 103"
 ARG CUDNN_VERSION=9.27.0.42-1
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
       libcudnn9-cuda-13=${CUDNN_VERSION} libcudnn9-dev-cuda-13=${CUDNN_VERSION} \
