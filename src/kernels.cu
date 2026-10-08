@@ -1,5 +1,7 @@
 #include "kernels.cuh"
 
+#include "check.hpp"
+
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_fp8.h>
@@ -83,6 +85,7 @@ void fill_random(void* data, DType type, size_t count, uint64_t seed, cudaStream
                                                             (count + 1) / 2, seed, 0, 256);
       break;
   }
+  check_cuda(cudaGetLastError(), "fill kernel");
 }
 
 void fill_scales(void* data, BlockScale type, size_t count, uint64_t seed, cudaStream_t stream) {
@@ -98,6 +101,7 @@ void fill_scales(void* data, BlockScale type, size_t count, uint64_t seed, cudaS
     case BlockScale::none:
       break;
   }
+  check_cuda(cudaGetLastError(), "scale fill kernel");
 }
 
 void count_mismatches(const void* a, const void* b, size_t bytes,
@@ -109,10 +113,13 @@ void count_mismatches(const void* a, const void* b, size_t bytes,
   mismatch_kernel<<<kBlocks, kThreads, 0, stream>>>(static_cast<const uint4*>(a),
                                                     static_cast<const uint4*>(b), words, a8, b8,
                                                     tail, device_count);
+  // A build without this GPU's arch fails here; unchecked, the burn would multiply zeros and never count an error.
+  check_cuda(cudaGetLastError(), "mismatch kernel");
 }
 
 void corrupt_one_byte(void* data, size_t offset, cudaStream_t stream) {
   corrupt_kernel<<<1, 1, 0, stream>>>(static_cast<uint8_t*>(data), offset);
+  check_cuda(cudaGetLastError(), "corrupt kernel");
 }
 
 }  // namespace brrr
