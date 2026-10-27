@@ -35,6 +35,7 @@ constexpr int kExitOk = 0, kExitSlow = 1, kExitFaulty = 2, kExitCannotRun = 3;
 struct Options {
   double seconds = 10;
   bool per_format = false;
+  bool confirm = false;
   bool list = false;
   bool json = false;
   std::optional<int> gpu;
@@ -53,6 +54,7 @@ void usage() {
       "  -l, --list             list GPUs and the formats each can run\n"
       "      --json             machine-readable result on stdout\n"
       "      --per-format       seconds apply to each format, not the total\n"
+      "      --confirm          burn slow-looking formats once more before calling them slow\n"
       "  -d                     same as -f fp64\n"
       "  -tc                    same as -f tf32\n"
       "  -h, --help\n"
@@ -85,6 +87,7 @@ Options parse_args(int argc, char** argv) {
     else if (a == "-l" || a == "--list") { o.list = true; }
     else if (a == "--json") { o.json = true; }
     else if (a == "--per-format") { o.per_format = true; }
+    else if (a == "--confirm") { o.confirm = true; }
     else if (a == "-m") {
       const std::string v = value();
       if (!v.empty() && v.back() == '%') o.memory_fraction = std::stod(v) / 100;
@@ -463,8 +466,8 @@ int run(const Options& opt) {
   };
 
   std::vector<FormatResult> results = burn(formats, "");
-  // A single slice at the power cap can dip several percent on a healthy GPU, so a format
-  // that looks slow is burned once more on every GPU; SLOW stands only if it repeats.
+  // A single slice at the power cap can dip several percent on a healthy GPU, so --confirm
+  // burns a slow-looking format once more on every GPU; SLOW stands only if it repeats.
   std::vector<FormatSpec> suspicious;
   for (const FormatSpec& f : formats) {
     for (const FormatResult& r : results) {
@@ -474,7 +477,7 @@ int run(const Options& opt) {
       }
     }
   }
-  if (!suspicious.empty() && !g_stop) {
+  if (opt.confirm && !suspicious.empty() && !g_stop) {
     if (!quiet) {
       std::printf("\nConfirming %zu slow-looking format(s) with a second run:", suspicious.size());
       for (const auto& f : suspicious) std::printf(" %s", f.name.c_str());
